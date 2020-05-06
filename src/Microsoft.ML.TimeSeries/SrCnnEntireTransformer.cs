@@ -281,7 +281,7 @@ namespace Microsoft.ML.Transforms.TimeSeries
             private static readonly int _lookaheadWindowSize = 5;
             private static readonly int _backAddWindowSize = 5;
             private static readonly int _avergingWindowSize = 3;
-            private static readonly int _judgementWindowSize = 21;
+            private static readonly int _judgementWindowSize = 40;
             private static readonly double _eps = 1e-8;
             private static readonly double _deanomalyThreshold = 0.35;
 
