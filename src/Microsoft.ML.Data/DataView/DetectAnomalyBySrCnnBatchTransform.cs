@@ -213,8 +213,7 @@ namespace Microsoft.ML.Data.DataView
         }
     }
 
-    // Sample class: look at the whole batch of float values <d0,d1,...,dn>, and return for each input x the
-    // product x*dotproduct(<d0, x*d1,...,x*dn>).
+    // TODO: SrCnn
     public sealed class DetectAnomalyBySrCnnBatchTransform : BatchTransformBase<float, DetectAnomalyBySrCnnBatchTransform.Batch>
     {
         private readonly int _batchSize;
