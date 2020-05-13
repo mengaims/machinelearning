@@ -215,11 +215,11 @@ namespace Microsoft.ML.Data.DataView
 
     // Sample class: look at the whole batch of float values <d0,d1,...,dn>, and return for each input x the
     // product x*dotproduct(<d0, x*d1,...,x*dn>).
-    public sealed class BatchTransform : BatchTransformBase<float, BatchTransform.Batch>
+    public sealed class DetectAnomalyBySrCnnBatchTransform : BatchTransformBase<float, DetectAnomalyBySrCnnBatchTransform.Batch>
     {
         private readonly int _batchSize;
 
-        public BatchTransform(IHostEnvironment env, IDataView input, string inputColumnName, string outputColumnName, int batchSize)
+        public DetectAnomalyBySrCnnBatchTransform(IHostEnvironment env, IDataView input, string inputColumnName, string outputColumnName, double threshold, int batchSize, double sensitivity, DetectMode detectMode)
             : base(env, input, inputColumnName, outputColumnName, new VectorDataViewType(NumberDataViewType.Double, batchSize))
         {
             _batchSize = batchSize;
@@ -251,18 +251,42 @@ namespace Microsoft.ML.Data.DataView
 
         protected override void ProcessBatch(Batch currentBatch)
         {
-            // Here we would do any calculations that need to be done on the entire batch.
             currentBatch.Process();
             currentBatch.Reset();
         }
 
+        /// <summary>
+        /// The detect modes of SrCnn models.
+        /// </summary>
+        public enum DetectMode
+        {
+            /// <summary>
+            /// In this mode, output (IsAnomaly, RawScore, Mag).
+            /// </summary>
+            AnomalyOnly = 0,
+
+            /// <summary>
+            /// In this mode, output (IsAnomaly, AnomalyScore, Mag, ExpectedValue, BoundaryUnit, UpperBoundary, LowerBoundary).
+            /// </summary>
+            AnomalyAndMargin = 1,
+
+            /// <summary>
+            /// In this mode, output (IsAnomaly, RawScore, Mag, ExpectedValue).
+            /// </summary>
+            AnomalyAndExpectedValue = 2
+        }
+
         public sealed class Batch
         {
-            private readonly List<float> _batch;
-            private float _dotProductCur;
+            private List<float> _previousBatch;
+            private List<float> _batch;
+            private float _cursor;
+            private readonly int _batchSize;
 
             public Batch(int batchSize)
             {
+                _batchSize = batchSize;
+                _previousBatch = new List<float>(batchSize);
                 _batch = new List<float>(batchSize);
             }
 
@@ -271,13 +295,24 @@ namespace Microsoft.ML.Data.DataView
                 _batch.Add(value);
             }
 
+            public int Count => _batch.Count;
+
             public void Process()
             {
-                _dotProductCur = VectorUtils.NormSquared(new ReadOnlySpan<float>(_batch.ToArray()));
+                // TODO: replace with SrCnn
+                _cursor = VectorUtils.NormSquared(new ReadOnlySpan<float>(_batch.ToArray()));
+                if (_batch.Count < _batchSize)
+                {
+                    _cursor += VectorUtils.NormSquared(new ReadOnlySpan<float>(
+                        _previousBatch.GetRange(_batchSize - _batch.Count - 1, _batchSize - _batch.Count).ToArray()));
+                }
             }
 
             public void Reset()
             {
+                var tempBatch = _previousBatch;
+                _previousBatch = _batch;
+                _batch = tempBatch;
                 _batch.Clear();
             }
 
@@ -289,7 +324,7 @@ namespace Microsoft.ML.Data.DataView
                     {
                         float src = default;
                         srcGetter(ref src);
-                        dst = src * _dotProductCur;
+                        dst = src * _cursor;
                     };
                 return getter;
             }

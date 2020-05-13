@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.ML.CommandLine;
 using Microsoft.ML.Data;
 using Microsoft.ML.Data.DataView;
@@ -1304,11 +1305,22 @@ namespace Microsoft.ML.RunTests
         [Fact]
         public void TestBatchTransform()
         {
+            // TODO: delete
             var bldr = new ArrayDataViewBuilder(Env);
             bldr.AddColumn("Input", NumberDataViewType.Single, new[] { 1f, 2f, 3f, 2f, 3f, 4f, 3f, 4f, 5f, 4f });
             var input = bldr.GetDataView();
 
-            var output = new BatchTransform(Env, input, "Input", "Output", 3);
+            var output = new DetectAnomalyBySrCnnBatchTransform(
+                Env, 
+                input, 
+                "Input", 
+                "Output",
+                0.3,
+                3,
+                99,
+                DetectAnomalyBySrCnnBatchTransform.DetectMode.AnomalyAndExpectedValue);
+            // var batchTransformOutput = ML.Data.CreateEnumerable<BatchTransformOutput>(output, reuseRowObject: false).ToList();
+
             using (var cursor = output.GetRowCursor(output.Schema))
             {
                 var inputGetter = cursor.GetGetter<float>(cursor.Schema["Input"]);
@@ -1323,6 +1335,14 @@ namespace Microsoft.ML.RunTests
                     Log($"{src}\t{dst}");
                 }
             }
+        }
+
+        private class BatchTransformOutput
+        {
+            public float Input { get; set; }
+
+            [VectorType]
+            public double[] Output { get; set; }
         }
 
         [Fact]
