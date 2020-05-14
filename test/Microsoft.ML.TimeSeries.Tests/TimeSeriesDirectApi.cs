@@ -4,9 +4,11 @@
 
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.ML.Data;
 using Microsoft.ML.TestFramework;
 using Microsoft.ML.TestFramework.Attributes;
+using Microsoft.ML.TimeSeries;
 using Microsoft.ML.Transforms.TimeSeries;
 using Xunit;
 using Xunit.Abstractions;
@@ -563,6 +565,38 @@ namespace Microsoft.ML.Tests
                     Assert.Equal(0, prediction.Prediction[0]);
                 k += 1;
             }
+        }
+
+
+        [Fact]
+        public void TestSrCnnBatchAnomalyDetector()
+        {
+            // TODO: delete/replace with SrCnn tests
+            var ml = new MLContext(1);
+            var bldr = new ArrayDataViewBuilder(ml);
+            bldr.AddColumn("Input", NumberDataViewType.Single, new[] { 1f, 2f, 3f, 2f, 3f, 4f, 3f, 4f, 5f, 4f, 6f, 7f, 1f, });
+            var input = bldr.GetDataView();
+
+            var output = new SrCnnBatchAnomalyDetector(
+                ml,
+                input,
+                "Input",
+                "Output",
+                0.3,
+                12,
+                99,
+                SrCnnDetectMode.AnomalyAndExpectedValue);
+            var batchTransformOutput = ml.Data.CreateEnumerable<BatchTransformOutput>(output, reuseRowObject: false).ToList();
+
+            var inputs = batchTransformOutput.Select(e => e.Input);
+            var outputs = batchTransformOutput.Select(e => e.Output);
+        }
+
+        private class BatchTransformOutput
+        {
+            public float Input { get; set; }
+
+            public float Output { get; set; }
         }
     }
 }

@@ -5,14 +5,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.ML.Numeric;
 using Microsoft.ML.Runtime;
 
 namespace Microsoft.ML.Data.DataView
 {
-    public abstract class BatchTransformBase<TInput, TBatch> : IDataView
+    internal abstract class BatchDataViewMapperBase<TInput, TBatch> : IDataView
     {
-        private protected sealed class Bindings : ColumnBindingsBase
+        protected sealed class Bindings : ColumnBindingsBase
         {
             private readonly DataViewType _outputColumnType;
             private readonly int _inputColumnIndex;
@@ -59,12 +58,12 @@ namespace Microsoft.ML.Data.DataView
 
         private readonly IDataView _source;
         private readonly IHost _host;
-        private protected readonly Bindings SchemaBindings;
+        protected readonly Bindings SchemaBindings;
         protected readonly string InputCol;
 
-        protected BatchTransformBase(IHostEnvironment env, IDataView input, string inputColumnName, string outputColumnName, DataViewType outputColumnType)
+        protected BatchDataViewMapperBase(IHostEnvironment env, string registrationName, IDataView input, string inputColumnName, string outputColumnName, DataViewType outputColumnType)
         {
-            _host = env.Register("Batch");
+            _host = env.Register(registrationName);
             _source = input;
             SchemaBindings = new Bindings(input.Schema, inputColumnName, outputColumnName, outputColumnType);
             InputCol = inputColumnName;
@@ -114,7 +113,7 @@ namespace Microsoft.ML.Data.DataView
 
         private sealed class Cursor : RootCursorBase
         {
-            private readonly BatchTransformBase<TInput, TBatch> _parent;
+            private readonly BatchDataViewMapperBase<TInput, TBatch> _parent;
             private readonly DataViewRowCursor _lookAheadCursor;
             private readonly DataViewRowCursor _input;
 
@@ -131,7 +130,7 @@ namespace Microsoft.ML.Data.DataView
 
             public override DataViewSchema Schema => _parent.Schema;
 
-            public Cursor(BatchTransformBase<TInput, TBatch> parent, DataViewRowCursor input, DataViewRowCursor lookAheadCursor, bool[] active)
+            public Cursor(BatchDataViewMapperBase<TInput, TBatch> parent, DataViewRowCursor input, DataViewRowCursor lookAheadCursor, bool[] active)
                 : base(parent._host)
             {
                 _parent = parent;
@@ -209,123 +208,6 @@ namespace Microsoft.ML.Data.DataView
 
                 _parent.ProcessBatch(_currentBatch);
                 return true;
-            }
-        }
-    }
-
-    // TODO: SrCnn
-    public sealed class DetectAnomalyBySrCnnBatchTransform : BatchTransformBase<float, DetectAnomalyBySrCnnBatchTransform.Batch>
-    {
-        private readonly int _batchSize;
-
-        public DetectAnomalyBySrCnnBatchTransform(IHostEnvironment env, IDataView input, string inputColumnName, string outputColumnName, double threshold, int batchSize, double sensitivity, DetectMode detectMode)
-            : base(env, input, inputColumnName, outputColumnName, new VectorDataViewType(NumberDataViewType.Double, batchSize))
-        {
-            _batchSize = batchSize;
-        }
-
-        protected override Delegate[] CreateGetters(DataViewRowCursor input, Batch currentBatch, bool[] active)
-        {
-            if (!SchemaBindings.AnyNewColumnsActive(x => active[x]))
-                return new Delegate[1];
-            return new[] { currentBatch.CreateGetter(input, InputCol) };
-        }
-
-        protected override Batch InitializeBatch(DataViewRowCursor input) => new Batch(_batchSize);
-
-        protected override Func<bool> GetIsNewBatchDelegate(DataViewRowCursor input)
-        {
-            return () => input.Position % _batchSize == 0;
-        }
-
-        protected override Func<bool> GetLastInBatchDelegate(DataViewRowCursor input)
-        {
-            return () => (input.Position + 1) % _batchSize == 0;
-        }
-
-        protected override void ProcessExample(Batch currentBatch, float currentInput)
-        {
-            currentBatch.AddValue(currentInput);
-        }
-
-        protected override void ProcessBatch(Batch currentBatch)
-        {
-            currentBatch.Process();
-            currentBatch.Reset();
-        }
-
-        /// <summary>
-        /// The detect modes of SrCnn models.
-        /// </summary>
-        public enum DetectMode
-        {
-            /// <summary>
-            /// In this mode, output (IsAnomaly, RawScore, Mag).
-            /// </summary>
-            AnomalyOnly = 0,
-
-            /// <summary>
-            /// In this mode, output (IsAnomaly, AnomalyScore, Mag, ExpectedValue, BoundaryUnit, UpperBoundary, LowerBoundary).
-            /// </summary>
-            AnomalyAndMargin = 1,
-
-            /// <summary>
-            /// In this mode, output (IsAnomaly, RawScore, Mag, ExpectedValue).
-            /// </summary>
-            AnomalyAndExpectedValue = 2
-        }
-
-        public sealed class Batch
-        {
-            private List<float> _previousBatch;
-            private List<float> _batch;
-            private float _cursor;
-            private readonly int _batchSize;
-
-            public Batch(int batchSize)
-            {
-                _batchSize = batchSize;
-                _previousBatch = new List<float>(batchSize);
-                _batch = new List<float>(batchSize);
-            }
-
-            public void AddValue(float value)
-            {
-                _batch.Add(value);
-            }
-
-            public int Count => _batch.Count;
-
-            public void Process()
-            {
-                // TODO: replace with SrCnn
-                _cursor = VectorUtils.NormSquared(new ReadOnlySpan<float>(_batch.ToArray()));
-                if (_batch.Count < _batchSize)
-                {
-                    _cursor += VectorUtils.NormSquared(new ReadOnlySpan<float>(
-                        _previousBatch.GetRange(_batchSize - _batch.Count - 1, _batchSize - _batch.Count).ToArray()));
-                }
-            }
-
-            public void Reset()
-            {
-                var tempBatch = _previousBatch;
-                _previousBatch = _batch;
-                _batch = tempBatch;
-                _batch.Clear();
-            }
-
-            public ValueGetter<float> CreateGetter(DataViewRowCursor input, string inputCol)
-            {
-                ValueGetter<float> srcGetter = input.GetGetter<float>(input.Schema[inputCol]);
-                ValueGetter<float> getter =
-                    (ref float dst) =>
-                    {
-                        float src = default;
-                        srcGetter(ref src);
-                        dst = src * _cursor;
-                    };
-                return getter;
             }
         }
     }

@@ -4,6 +4,7 @@
 
 using Microsoft.ML.Data;
 using Microsoft.ML.Data.DataView;
+using Microsoft.ML.TimeSeries;
 using Microsoft.ML.Transforms.TimeSeries;
 
 namespace Microsoft.ML
@@ -158,7 +159,7 @@ namespace Microsoft.ML
         /// <param name="threshold">The threshold to determine anomaly, score larger than the threshold is considered as anomaly. Should be in (0,1)</param>
         /// <param name="batchSize">.Divide the input data into batches to fit SrCnn model. Must be -1 or a positive integer no less than 12. Default value is 1024.</param>
         /// <param name="sensitivity">The sensitivity of boundaries. Must be in the interval (0, 100).</param>
-        /// <param name="detectMode">The detect modes of SrCnn models.</param>
+        /// <param name="detectMode">The detect mode of the SrCnn model.</param>
         /// <example>
         /// <format type="text/markdown">
         /// <![CDATA[
@@ -166,9 +167,9 @@ namespace Microsoft.ML
         /// ]]>
         /// </format>
         /// </example>
-        public static DetectAnomalyBySrCnnBatchTransform BatchDetectAnomalyBySrCnn(this TransformsCatalog catalog, IDataView input, string outputColumnName, string inputColumnName,
-            double threshold = 0.3, int batchSize = 1024, double sensitivity = 99, DetectAnomalyBySrCnnBatchTransform.DetectMode detectMode = DetectAnomalyBySrCnnBatchTransform.DetectMode.AnomalyAndMargin)
-            => new DetectAnomalyBySrCnnBatchTransform(CatalogUtils.GetEnvironment(catalog), input, inputColumnName, outputColumnName, threshold, batchSize, sensitivity, detectMode);
+        public static IDataView BatchDetectAnomalyBySrCnn(this TransformsCatalog catalog, IDataView input, string outputColumnName, string inputColumnName,
+            double threshold = 0.3, int batchSize = 1024, double sensitivity = 99, SrCnnDetectMode detectMode = SrCnnDetectMode.AnomalyAndMargin)
+            => new SrCnnBatchAnomalyDetector(CatalogUtils.GetEnvironment(catalog), input, inputColumnName, outputColumnName, threshold, batchSize, sensitivity, detectMode);
 
         /// <summary>
         /// Singular Spectrum Analysis (SSA) model for univariate time-series forecasting.
