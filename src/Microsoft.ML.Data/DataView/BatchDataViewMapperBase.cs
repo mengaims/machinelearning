@@ -11,62 +11,19 @@ namespace Microsoft.ML.Data.DataView
 {
     internal abstract class BatchDataViewMapperBase<TInput, TBatch> : IDataView
     {
-        protected sealed class Bindings : ColumnBindingsBase
-        {
-            private readonly DataViewType _outputColumnType;
-            private readonly int _inputColumnIndex;
-
-            public Bindings(DataViewSchema input, string inputColumnName, string outputColumnName, DataViewType outputColumnType)
-                : base(input, true, outputColumnName)
-            {
-                _outputColumnType = outputColumnType;
-                _inputColumnIndex = Input[inputColumnName].Index;
-            }
-
-            protected override DataViewType GetColumnTypeCore(int iinfo)
-            {
-                Contracts.Check(iinfo == 0);
-                return _outputColumnType;
-            }
-
-            // Get a predicate for the input columns.
-            public Func<int, bool> GetDependencies(Func<int, bool> predicate)
-            {
-                Contracts.AssertValue(predicate);
-
-                var active = new bool[Input.Count];
-                for (int col = 0; col < ColumnCount; col++)
-                {
-                    if (!predicate(col))
-                        continue;
-
-                    bool isSrc;
-                    int index = MapColumnIndex(out isSrc, col);
-                    if (isSrc)
-                        active[index] = true;
-                    else
-                        active[_inputColumnIndex] = true;
-                }
-
-                return col => 0 <= col && col < active.Length && active[col];
-            }
-        }
-
         public bool CanShuffle => false;
 
         public DataViewSchema Schema => SchemaBindings.AsSchema;
 
         private readonly IDataView _source;
         private readonly IHost _host;
-        protected readonly Bindings SchemaBindings;
-        protected readonly string InputCol;
+        protected readonly ColumnBindingsBase SchemaBindings;
 
-        protected BatchDataViewMapperBase(IHostEnvironment env, string registrationName, IDataView input, string inputColumnName, string outputColumnName, DataViewType outputColumnType)
+        protected BatchDataViewMapperBase(IHostEnvironment env, string registrationName, IDataView input, ColumnBindingsBase schemaBindings)
         {
             _host = env.Register(registrationName);
             _source = input;
-            SchemaBindings = new Bindings(input.Schema, inputColumnName, outputColumnName, outputColumnType);
-            InputCol = inputColumnName;
+            SchemaBindings = schemaBindings;
         }
 
         public long? GetRowCount() => _source.GetRowCount();
@@ -94,7 +51,7 @@ namespace Microsoft.ML.Data.DataView
             // REVIEW: We can get a different input predicate for the input cursor and for the lookahead cursor. The lookahead
             // cursor is only used for getting the values from the input column, so it only needs that column activated. The
             // other cursor is used to get source columns, so it needs the rest of them activated.
-            var predInput = SchemaBindings.GetDependencies(predicate);
+            var predInput = GetSchemaBindingDependencies(predicate);
             var inputCols = _source.Schema.Where(c => predInput(c.Index));
             return new Cursor(this, _source.GetRowCursor(inputCols), _source.GetRowCursor(inputCols), active);
         }
@@ -109,7 +66,9 @@ namespace Microsoft.ML.Data.DataView
         protected abstract void ProcessExample(TBatch currentBatch, TInput currentInput);
         protected abstract Func<bool> GetLastInBatchDelegate(DataViewRowCursor lookAheadCursor);
         protected abstract Func<bool> GetIsNewBatchDelegate(DataViewRowCursor lookAheadCursor);
+        protected abstract ValueGetter<TInput> GetLookAheadGetter(DataViewRowCursor lookAheadCursor);
         protected abstract Delegate[] CreateGetters(DataViewRowCursor input, TBatch currentBatch, bool[] active);
+        protected abstract Func<int, bool> GetSchemaBindingDependencies(Func<int, bool> predicate);
 
         private sealed class Cursor : RootCursorBase
         {
@@ -144,7 +103,7 @@ namespace Microsoft.ML.Data.DataView
 
                 _lastInBatchInLookAheadCursorDel = _parent.GetLastInBatchDelegate(_lookAheadCursor);
                 _firstInBatchInInputCursorDel = _parent.GetIsNewBatchDelegate(_input);
-                _inputGetterInLookAheadCursor = _lookAheadCursor.GetGetter<TInput>(_lookAheadCursor.Schema[_parent.InputCol]);
+                _inputGetterInLookAheadCursor = _parent.GetLookAheadGetter(_lookAheadCursor);
             }
 
             public override ValueGetter<TValue> GetGetter<TValue>(DataViewSchema.Column column)
