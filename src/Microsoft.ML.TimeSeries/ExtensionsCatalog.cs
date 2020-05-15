@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using Microsoft.ML.Data;
+using Microsoft.ML.Runtime;
 using Microsoft.ML.TimeSeries;
 using Microsoft.ML.Transforms.TimeSeries;
 
@@ -144,7 +145,7 @@ namespace Microsoft.ML
         /// </format>
         /// </example>
         public static SrCnnAnomalyEstimator DetectAnomalyBySrCnn(this TransformsCatalog catalog, string outputColumnName, string inputColumnName,
-            int windowSize=64, int backAddWindowSize=5, int lookaheadWindowSize=5, int averageingWindowSize=3, int judgementWindowSize=21, double threshold=0.3)
+            int windowSize = 64, int backAddWindowSize = 5, int lookaheadWindowSize = 5, int averageingWindowSize = 3, int judgementWindowSize = 21, double threshold = 0.3)
             => new SrCnnAnomalyEstimator(CatalogUtils.GetEnvironment(catalog), outputColumnName, windowSize, backAddWindowSize, lookaheadWindowSize, averageingWindowSize, judgementWindowSize, threshold, inputColumnName);
 
         /// <summary>
@@ -169,6 +170,50 @@ namespace Microsoft.ML
         public static IDataView BatchDetectAnomalyBySrCnn(this DataOperationsCatalog catalog, IDataView input, string outputColumnName, string inputColumnName,
             double threshold = 0.3, int batchSize = 1024, double sensitivity = 99, SrCnnDetectMode detectMode = SrCnnDetectMode.AnomalyAndMargin)
             => new SrCnnBatchAnomalyDetector(CatalogUtils.GetEnvironment(catalog), input, inputColumnName, outputColumnName, threshold, batchSize, sensitivity, detectMode);
+
+        /// <summary>
+        /// Create <see cref="RootCause"/>, which localizes root causes using decision tree algorithm.
+        /// </summary>
+        /// <param name="catalog">The anomaly detection catalog.</param>
+        /// <param name="src">Root cause's input. The data is an instance of <see cref="Microsoft.ML.TimeSeries.RootCauseLocalizationInput"/>.</param>
+        /// <param name="beta">Beta is a weight parameter for user to choose. It is used when score is calculated for each root cause item. The range of beta should be in [0,1]. For a larger beta, root cause point which has a large difference between value and expected value will get a high score. On the contrary, for a small beta, root cause items which has a high relative change will get a high score.</param>
+        /// <example>
+        /// <format type="text/markdown">
+        /// <![CDATA[
+        /// [!code-csharp[LocalizeRootCause](~/../docs/samples/docs/samples/Microsoft.ML.Samples/Dynamic/Transforms/TimeSeries/LocalizeRootCause.cs)]
+        /// ]]>
+        /// </format>
+        /// </example>
+        public static RootCause LocalizeRootCause(this AnomalyDetectionCatalog catalog, RootCauseLocalizationInput src, double beta = 0.5)
+        {
+            IHostEnvironment host = CatalogUtils.GetEnvironment(catalog);
+
+            //check the root cause input
+            CheckRootCauseInput(host, src);
+
+            //check beta
+            host.CheckUserArg(beta >= 0 && beta <= 1, nameof(beta), "Must be in [0,1]");
+
+            //find out the root cause
+            RootCauseAnalyzer analyzer = new RootCauseAnalyzer(src, beta);
+            RootCause dst = analyzer.Analyze();
+            return dst;
+        }
+
+        private static void CheckRootCauseInput(IHostEnvironment host, RootCauseLocalizationInput src)
+        {
+            host.CheckUserArg(src.Slices.Count >= 1, nameof(src.Slices), "Must has more than one item");
+
+            bool containsAnomalyTimestamp = false;
+            foreach (MetricSlice slice in src.Slices)
+            {
+                if (slice.TimeStamp.Equals(src.AnomalyTimestamp))
+                {
+                    containsAnomalyTimestamp = true;
+                }
+            }
+            host.CheckUserArg(containsAnomalyTimestamp, nameof(src.Slices), "Has no points in the given anomaly timestamp");
+        }
 
         /// <summary>
         /// Singular Spectrum Analysis (SSA) model for univariate time-series forecasting.
