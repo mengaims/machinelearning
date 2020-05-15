@@ -4,9 +4,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.ML.Data;
 using Microsoft.ML.Data.DataView;
-using Microsoft.ML.Internal.Utilities;
 using Microsoft.ML.Numeric;
 using Microsoft.ML.Runtime;
 
@@ -34,18 +34,19 @@ namespace Microsoft.ML.TimeSeries
     }
 
     // TODO: SrCnn
-    internal sealed class SrCnnBatchAnomalyDetector : BatchDataViewMapperBase<float, SrCnnBatchAnomalyDetector.Batch>
+    internal sealed class SrCnnBatchAnomalyDetector : BatchDataViewMapperBase<double, SrCnnBatchAnomalyDetector.Batch>
     {
+        private const int MinBatchSize = 12;
         private readonly int _batchSize;
-        private const int _minBatchSize = 12;
         private readonly string _inputColumnName;
+        private readonly SrCnnDetectMode _detectMode;
 
         private class Bindings : ColumnBindingsBase
         {
-            private readonly DataViewType _outputColumnType;
+            private readonly VectorDataViewType _outputColumnType;
             private readonly int _inputColumnIndex;
 
-            public Bindings(DataViewSchema input, string inputColumnName, string outputColumnName, DataViewType outputColumnType)
+            public Bindings(DataViewSchema input, string inputColumnName, string outputColumnName, VectorDataViewType outputColumnType)
                 : base(input, true, outputColumnName)
             {
                 _outputColumnType = outputColumnType;
@@ -82,12 +83,18 @@ namespace Microsoft.ML.TimeSeries
         }
 
         public SrCnnBatchAnomalyDetector(IHostEnvironment env, IDataView input, string inputColumnName, string outputColumnName, double threshold, int batchSize, double sensitivity, SrCnnDetectMode detectMode)
-            : base(env, "SrCnnBatchAnomalyDetector", input, new Bindings(input.Schema, inputColumnName, outputColumnName, NumberDataViewType.Single))
+            : base(env, "SrCnnBatchAnomalyDetector", input)
         {
-            Contracts.CheckParam(batchSize >= _minBatchSize, nameof(batchSize), "batch size is too small");
+
+            Contracts.CheckParam(batchSize >= MinBatchSize, nameof(batchSize), "batch size is too small");
+            _detectMode = detectMode;
+            int outputSize = 6; // TODO: determine based on detectMode
+            SchemaBindings = new Bindings(input.Schema, inputColumnName, outputColumnName, new VectorDataViewType(NumberDataViewType.Double, outputSize));
             _batchSize = batchSize;
             _inputColumnName = inputColumnName;
         }
+
+        protected override ColumnBindingsBase SchemaBindings { get; }
 
         protected override Delegate[] CreateGetters(DataViewRowCursor input, Batch currentBatch, bool[] active)
         {
@@ -96,7 +103,7 @@ namespace Microsoft.ML.TimeSeries
             return new[] { currentBatch.CreateGetter(input, _inputColumnName) };
         }
 
-        protected override Batch InitializeBatch(DataViewRowCursor input) => new Batch(_batchSize);
+        protected override Batch InitializeBatch(DataViewRowCursor input) => new Batch(_batchSize, _detectMode);
 
         protected override Func<bool> GetIsNewBatchDelegate(DataViewRowCursor input)
         {
@@ -108,9 +115,9 @@ namespace Microsoft.ML.TimeSeries
             return () => (input.Position + 1) % _batchSize == 0;
         }
 
-        protected override ValueGetter<float> GetLookAheadGetter(DataViewRowCursor input)
+        protected override ValueGetter<double> GetLookAheadGetter(DataViewRowCursor input)
         {
-            return input.GetGetter<float>(input.Schema[_inputColumnName]);
+            return input.GetGetter<double>(input.Schema[_inputColumnName]);
         }
 
         protected override Func<int, bool> GetSchemaBindingDependencies(Func<int, bool> predicate)
@@ -118,7 +125,7 @@ namespace Microsoft.ML.TimeSeries
             return (SchemaBindings as Bindings).GetDependencies(predicate);
         }
 
-        protected override void ProcessExample(Batch currentBatch, float currentInput)
+        protected override void ProcessExample(Batch currentBatch, double currentInput)
         {
             currentBatch.AddValue(currentInput);
         }
@@ -131,19 +138,19 @@ namespace Microsoft.ML.TimeSeries
 
         public sealed class Batch
         {
-            private List<float> _previousBatch;
-            private List<float> _batch;
-            private float _cursor;
-            private readonly int _batchSize;
+            private List<double> _previousBatch;
+            private List<double> _batch;
+            private readonly SrCnnDetectMode _detectMode;
+            private double _cursor;
 
-            public Batch(int batchSize)
+            public Batch(int batchSize, SrCnnDetectMode detectMode)
             {
-                _batchSize = batchSize;
-                _previousBatch = new List<float>(batchSize);
-                _batch = new List<float>(batchSize);
+                _detectMode = detectMode;
+                _previousBatch = new List<double>(batchSize);
+                _batch = new List<double>(batchSize);
             }
 
-            public void AddValue(float value)
+            public void AddValue(double value)
             {
                 _batch.Add(value);
             }
@@ -152,13 +159,8 @@ namespace Microsoft.ML.TimeSeries
 
             public void Process()
             {
-                // TODO: replace with SrCnn
-                _cursor = VectorUtils.NormSquared(new ReadOnlySpan<float>(_batch.ToArray()));
-                if (_batch.Count < _batchSize)
-                {
-                    _cursor += VectorUtils.NormSquared(new ReadOnlySpan<float>(
-                        _previousBatch.GetRange(_batch.Count, _batchSize - _batch.Count).ToArray()));
-                }
+                // TODO: replace with run of SrCnn
+                _cursor = _batch.Sum();
             }
 
             public void Reset()
@@ -169,15 +171,23 @@ namespace Microsoft.ML.TimeSeries
                 _batch.Clear();
             }
 
-            public ValueGetter<float> CreateGetter(DataViewRowCursor input, string inputCol)
+            public ValueGetter<VBuffer<double>> CreateGetter(DataViewRowCursor input, string inputCol)
             {
-                ValueGetter<float> srcGetter = input.GetGetter<float>(input.Schema[inputCol]);
-                ValueGetter<float> getter =
-                    (ref float dst) =>
+                ValueGetter<double> srcGetter = input.GetGetter<double>(input.Schema[inputCol]);
+                ValueGetter<VBuffer<double>> getter =
+                    (ref VBuffer<double> dst) =>
                     {
-                        float src = default;
+                        double src = default;
                         srcGetter(ref src);
-                        dst = src * _cursor;
+                        // TODO: replace with SrCnn result
+                        dst = new VBuffer<double>(6, new[] {
+                            src * _cursor,
+                            (src + 1) * _cursor,
+                            (src + 2) * _cursor,
+                            (src + 3) * _cursor,
+                            (src + 4) * _cursor,
+                            (src + 5) * _cursor,
+                        });
                     };
                 return getter;
             }

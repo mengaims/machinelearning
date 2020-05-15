@@ -3,7 +3,6 @@
 // See the LICENSE file in the project root for more information.
 
 using Microsoft.ML.Data;
-using Microsoft.ML.Data.DataView;
 using Microsoft.ML.TimeSeries;
 using Microsoft.ML.Transforms.TimeSeries;
 
@@ -163,11 +162,11 @@ namespace Microsoft.ML
         /// <example>
         /// <format type="text/markdown">
         /// <![CDATA[
-        /// [!code-csharp[DetectAnomalyBySrCnn](~/../docs/samples/docs/samples/Microsoft.ML.Samples/Dynamic/Transforms/TimeSeries/DetectAnomalyBySrCnn.cs)]
+        /// [!code-csharp[DetectAnomalyBySrCnn](~/../docs/samples/docs/samples/Microsoft.ML.Samples/Dynamic/Transforms/TimeSeries/DetectAnomalyBySrCnnBatchPrediction.cs)]
         /// ]]>
         /// </format>
         /// </example>
-        public static IDataView BatchDetectAnomalyBySrCnn(this TransformsCatalog catalog, IDataView input, string outputColumnName, string inputColumnName,
+        public static IDataView BatchDetectAnomalyBySrCnn(this DataOperationsCatalog catalog, IDataView input, string outputColumnName, string inputColumnName,
             double threshold = 0.3, int batchSize = 1024, double sensitivity = 99, SrCnnDetectMode detectMode = SrCnnDetectMode.AnomalyAndMargin)
             => new SrCnnBatchAnomalyDetector(CatalogUtils.GetEnvironment(catalog), input, inputColumnName, outputColumnName, threshold, batchSize, sensitivity, detectMode);
 

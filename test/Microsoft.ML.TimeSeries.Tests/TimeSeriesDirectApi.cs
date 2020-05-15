@@ -7,7 +7,6 @@ using System.IO;
 using System.Linq;
 using Microsoft.ML.Data;
 using Microsoft.ML.TestFramework;
-using Microsoft.ML.TestFramework.Attributes;
 using Microsoft.ML.TimeSeries;
 using Microsoft.ML.Transforms.TimeSeries;
 using Xunit;
@@ -567,16 +566,14 @@ namespace Microsoft.ML.Tests
             }
         }
 
-
         [Fact]
         public void TestSrCnnBatchAnomalyDetector()
         {
             // TODO: delete/replace with SrCnn tests
             var ml = new MLContext(1);
             var bldr = new ArrayDataViewBuilder(ml);
-            bldr.AddColumn("Input", NumberDataViewType.Single, new[] { 1f, 2f, 3f, 2f, 3f, 4f, 3f, 4f, 5f, 4f, 6f, 7f, 1f, });
+            bldr.AddColumn("Input", NumberDataViewType.Double, new[] { 1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0, 4.0, 6.0, 7.0, 1.0, });
             var input = bldr.GetDataView();
-
             var output = new SrCnnBatchAnomalyDetector(
                 ml,
                 input,
@@ -594,9 +591,10 @@ namespace Microsoft.ML.Tests
 
         private class BatchTransformOutput
         {
-            public float Input { get; set; }
+            public double Input { get; set; }
 
-            public float Output { get; set; }
+            [VectorType]
+            public double[] Output { get; set; }
         }
     }
 }

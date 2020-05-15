@@ -17,13 +17,11 @@ namespace Microsoft.ML.Data.DataView
 
         private readonly IDataView _source;
         private readonly IHost _host;
-        protected readonly ColumnBindingsBase SchemaBindings;
 
-        protected BatchDataViewMapperBase(IHostEnvironment env, string registrationName, IDataView input, ColumnBindingsBase schemaBindings)
+        protected BatchDataViewMapperBase(IHostEnvironment env, string registrationName, IDataView input)
         {
             _host = env.Register(registrationName);
             _source = input;
-            SchemaBindings = schemaBindings;
         }
 
         public long? GetRowCount() => _source.GetRowCount();
@@ -61,6 +59,7 @@ namespace Microsoft.ML.Data.DataView
             return new[] { GetRowCursor(columnsNeeded, rand) };
         }
 
+        protected abstract ColumnBindingsBase SchemaBindings { get; }
         protected abstract TBatch InitializeBatch(DataViewRowCursor input);
         protected abstract void ProcessBatch(TBatch currentBatch);
         protected abstract void ProcessExample(TBatch currentBatch, TInput currentInput);
@@ -79,7 +78,7 @@ namespace Microsoft.ML.Data.DataView
             private readonly bool[] _active;
             private readonly Delegate[] _getters;
 
-            private TBatch _currentBatch;
+            private readonly TBatch _currentBatch;
             private readonly Func<bool> _lastInBatchInLookAheadCursorDel;
             private readonly Func<bool> _firstInBatchInInputCursorDel;
             private readonly ValueGetter<TInput> _inputGetterInLookAheadCursor;
